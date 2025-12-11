@@ -35,3 +35,7 @@ so the major sponsor that i am gonna use is cline ( they are really cool ),
 now complete a prototype by 12-12-2025 and the remaining two days we can do finising touches and video recording
 
 this is complex > will i able to implement it ? i dont know, project seems interesting so lets put everything to make this thing work 
+
+11-12-2025
+
+really underestimated the complexity of this wasted 4 days, this thing can't be built in week, switching to new idea to use oumi
