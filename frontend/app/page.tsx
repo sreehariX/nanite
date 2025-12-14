@@ -44,18 +44,17 @@ interface RepoResult {
   model: string;
   promptId: string;
   promptContent: string;
-  criticalDetection: number;
+  criticalDetectionRate: number;
+  hallucinationRate: number;
+  helpfulnessRate: number;
+  passed: boolean;
   verdict: "Recommended" | "Acceptable" | "Rejected";
   explanation: string;
   rank: number;
-  scores: {
-    precision: number;
-    recall: number;
-    f1: number;
-  };
+  details?: any[];
 }
 
-const steps = ["Repository", "Global Filter", "Select PRs", "Generate Focus", "Results"];
+const steps = ["Repository", "Global Filter", "Select PRs", "Finalize PRs", "Results"];
 
 function DiffViewer({ diff }: { diff: string }) {
   const lines = diff.split("\n").slice(0, 100);
@@ -134,59 +133,6 @@ function ProgressIndicator({ current, total }: { current: number; total: number 
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-const DUMMY_EXPECTED_FOCUS: string[] = [
-  "error_handling",
-  "null_check",
-  "security_vulnerability",
-  "performance_issue",
-  "race_condition",
-  "memory_leak",
-  "input_validation",
-  "authentication",
-  "data_integrity",
-  "logging",
-  "edge_case",
-  "type_safety",
-  "resource_cleanup",
-  "api_contract",
-  "concurrency",
-];
-
-const generateRepoResults = (prompts: SystemPrompt[]): RepoResult[] => {
-  const results: RepoResult[] = [];
-  let rank = 1;
-
-  const combinations = [
-    { model: "gemini-1.5-flash", promptId: "prompt-3", f1: 0.94, verdict: "Recommended" as const, explanation: "Best detection rate for the issues in your repository" },
-    { model: "gemini-1.5-pro", promptId: "prompt-4", f1: 0.91, verdict: "Acceptable" as const, explanation: "Strong overall performance, slightly verbose" },
-    { model: "gemini-1.5-flash", promptId: "prompt-2", f1: 0.89, verdict: "Acceptable" as const, explanation: "Good coverage with low false positive rate" },
-    { model: "gemini-1.5-pro", promptId: "prompt-3", f1: 0.88, verdict: "Acceptable" as const, explanation: "Solid detection, occasionally misses edge cases" },
-    { model: "gemini-1.5-flash", promptId: "prompt-4", f1: 0.87, verdict: "Acceptable" as const, explanation: "Good balance of precision and recall" },
-    { model: "gemini-1.5-pro", promptId: "prompt-5", f1: 0.85, verdict: "Acceptable" as const, explanation: "Thorough but sometimes over-cautious" },
-  ];
-
-  for (const combo of combinations) {
-    const prompt = prompts.find((p) => p.id === combo.promptId);
-    const precision = combo.f1 - 0.02 + Math.random() * 0.04;
-    const recall = combo.f1 + 0.02 - Math.random() * 0.04;
-    results.push({
-      model: combo.model,
-      promptId: combo.promptId,
-      promptContent: prompt?.content || "",
-      criticalDetection: combo.f1 + (Math.random() * 0.04 - 0.02),
-      verdict: combo.verdict,
-      explanation: combo.explanation,
-      rank: rank++,
-      scores: {
-        precision: Math.min(0.99, Math.max(0.4, precision)),
-        recall: Math.min(0.99, Math.max(0.4, recall)),
-        f1: combo.f1,
-      },
-    });
-  }
-
-  return results;
-};
 
 export default function App() {
   const [step, setStep] = useState(0);
@@ -381,22 +327,48 @@ export default function App() {
 
   const generateExpectedFocus = async () => {
     setIsLoading(true);
-    setLoadingMessage("Sending to Kestra for analysis...");
+    setLoadingMessage("Analyzing PRs to generate expected focus areas...");
+    setError(null);
 
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    try {
+      const selectedPRs = prs.filter((pr) => pr.selected);
+      
+      const response = await fetch(`${API_BASE_URL}/api/eval/generate-focus`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prs: selectedPRs.map((pr) => ({
+            id: pr.id,
+            title: pr.title,
+            diff: pr.diff,
+          })),
+        }),
+      });
 
-    const updatedPRs = prs.map((pr) => {
-      if (pr.selected) {
-        const randomFocus = DUMMY_EXPECTED_FOCUS[Math.floor(Math.random() * DUMMY_EXPECTED_FOCUS.length)];
-        return { ...pr, expectedFocus: randomFocus };
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.detail || "Failed to generate focus");
       }
-      return pr;
-    });
 
-    setPrs(updatedPRs);
-    setIsLoading(false);
-    setLoadingMessage("");
-    setStep(3);
+      const data = await response.json();
+      const focusMap = new Map(data.results.map((r: any) => [r.id, r]));
+
+      const updatedPRs = prs.map((pr) => {
+        if (pr.selected && focusMap.has(pr.id)) {
+          const focusData = focusMap.get(pr.id);
+          return { ...pr, expectedFocus: focusData.focus };
+        }
+        return pr;
+      });
+
+      setPrs(updatedPRs);
+      setStep(3);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to generate focus");
+    } finally {
+      setIsLoading(false);
+      setLoadingMessage("");
+    }
   };
 
   const handleStep1Continue = () => {
@@ -411,18 +383,87 @@ export default function App() {
     generateExpectedFocus();
   };
 
-  const handleStep4Continue = () => {
+  const handleStep4Continue = async () => {
     setIsLoading(true);
-    setLoadingMessage("Running evaluation...");
-    
-    const results = generateRepoResults(prompts);
-    setRepoResults(results);
-    
-    setTimeout(() => {
+    setLoadingMessage("Starting repo-specific evaluation...");
+    setError(null);
+
+    try {
+      const selectedPRs = prs.filter((pr) => pr.selected);
+      
+      const startRes = await fetch(`${API_BASE_URL}/api/eval/repo/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prs: selectedPRs.map((pr) => ({
+            id: pr.id,
+            title: pr.title,
+            diff: pr.diff,
+            expectedFocus: pr.expectedFocus,
+          })),
+        }),
+      });
+
+      if (!startRes.ok) {
+        const errData = await startRes.json();
+        throw new Error(errData.detail || "Failed to start evaluation");
+      }
+
+      const startData = await startRes.json();
+      setEvalProgress({
+        current: 0,
+        total: startData.total_combinations,
+        status: "running",
+        currentModel: "",
+        currentPrompt: "",
+        currentPr: "",
+        currentStep: "Initializing...",
+        logs: []
+      });
+
+      const pollInterval = setInterval(async () => {
+        try {
+          const statusRes = await fetch(`${API_BASE_URL}/api/eval/repo/status`);
+          const statusData = await statusRes.json();
+
+          if (statusData.status === "running") {
+            setEvalProgress({
+              current: statusData.progress || 0,
+              total: statusData.total || startData.total_combinations,
+              status: "running",
+              currentModel: statusData.current_model || "",
+              currentPrompt: statusData.current_prompt || "",
+              currentPr: statusData.current_pr || "",
+              currentStep: `Evaluating ${statusData.current_model} + ${statusData.current_prompt}`,
+              logs: statusData.logs || []
+            });
+            setLoadingMessage(statusData.current_pr || "Processing...");
+          } else if (statusData.status === "complete") {
+            clearInterval(pollInterval);
+            setRepoResults(statusData.results || []);
+            setEvalProgress(prev => ({ ...prev, logs: statusData.logs || prev.logs }));
+            setIsLoading(false);
+            setLoadingMessage("");
+            setStep(4);
+          }
+        } catch (err) {
+          console.error("Polling error:", err);
+        }
+      }, 1000);
+
+      setTimeout(() => {
+        clearInterval(pollInterval);
+        if (isLoading) {
+          setError("Evaluation timed out. Please try again.");
+          setIsLoading(false);
+        }
+      }, 600000);
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to run evaluation");
       setIsLoading(false);
       setLoadingMessage("");
-      setStep(4);
-    }, 1500);
+    }
   };
 
   const pageVariants = {
@@ -968,7 +1009,7 @@ export default function App() {
               <div className="flex items-start justify-between gap-8">
                 <div className="max-w-xl">
                   <h2 className="text-2xl font-semibold tracking-tight text-white mb-2">
-                    Review Expected Focus
+                    Finalize Pull Requests
                   </h2>
                   {repoData && (
                     <p className="text-zinc-400 mb-2">
@@ -976,7 +1017,7 @@ export default function App() {
                     </p>
                   )}
                   <p className="text-zinc-500 text-sm">
-                    Kestra analyzed your PRs and generated expected focus areas. You can edit these if needed.
+                    AI analyzed your PRs and generated expected focus areas. Review and edit if needed before evaluation.
                   </p>
                 </div>
                 <div className="px-4 py-2 rounded-lg bg-green-500/10 border border-green-500/20 shrink-0">
@@ -984,6 +1025,72 @@ export default function App() {
                   <span className="text-zinc-500 ml-1">PRs ready</span>
                 </div>
               </div>
+
+              {isLoading && evalProgress.total > 0 && (
+                <Card className="bg-zinc-900/50 border-zinc-800 backdrop-blur-sm">
+                  <CardContent className="p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-semibold text-white">Running Evaluation</h3>
+                      <span className="text-sm text-zinc-400">
+                        {evalProgress.current}/{evalProgress.total} combinations
+                      </span>
+                    </div>
+                    
+                    <div className="mb-6">
+                      <div className="h-2 bg-zinc-800 rounded-full overflow-hidden">
+                        <motion.div
+                          className="h-full bg-gradient-to-r from-green-500 to-green-400"
+                          initial={{ width: 0 }}
+                          animate={{ width: `${(evalProgress.current / evalProgress.total) * 100}%` }}
+                          transition={{ duration: 0.3 }}
+                        />
+                      </div>
+                      <p className="text-xs text-zinc-500 mt-2 text-right">
+                        {((evalProgress.current / evalProgress.total) * 100).toFixed(0)}% complete
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-4 mb-6">
+                      <div className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700/50">
+                        <p className="text-xs text-zinc-500 mb-1">Model</p>
+                        <p className="text-sm font-mono text-green-400">
+                          {evalProgress.currentModel || "-"}
+                        </p>
+                      </div>
+                      <div className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700/50">
+                        <p className="text-xs text-zinc-500 mb-1">Prompt</p>
+                        <p className="text-sm font-mono text-blue-400">
+                          {evalProgress.currentPrompt || "-"}
+                        </p>
+                      </div>
+                      <div className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700/50">
+                        <p className="text-xs text-zinc-500 mb-1">Current PR</p>
+                        <p className="text-sm font-mono text-amber-400">
+                          {evalProgress.currentPr || "-"}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                        <p className="text-xs text-zinc-500">Live Logs</p>
+                      </div>
+                      <div className="bg-zinc-950 rounded-lg border border-zinc-800 p-3 h-32 overflow-auto font-mono text-xs">
+                        {evalProgress.logs.length === 0 ? (
+                          <p className="text-zinc-600">Waiting for logs...</p>
+                        ) : (
+                          evalProgress.logs.map((log, idx) => (
+                            <div key={idx} className="py-0.5 text-zinc-400">
+                              {log}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
               <div className="space-y-2 max-h-[55vh] overflow-auto pr-1">
                 {prs.filter((pr) => pr.selected).map((pr, idx) => (
@@ -1179,18 +1286,24 @@ export default function App() {
                         </AnimatePresence>
                       </div>
                     </div>
-                    <div className="flex gap-8 shrink-0">
+                    <div className="flex gap-6 shrink-0">
                       <div className="text-center">
-                        <div className="text-4xl font-semibold text-white mb-1">
-                          {(repoResults[0].criticalDetection * 100).toFixed(0)}%
+                        <div className="text-3xl font-semibold text-green-400 mb-1">
+                          {(repoResults[0].criticalDetectionRate * 100).toFixed(0)}%
                         </div>
                         <div className="text-xs text-zinc-500">Detection</div>
                       </div>
                       <div className="text-center">
-                        <div className="text-4xl font-semibold text-green-400 mb-1">
-                          {(repoResults[0].scores.f1 * 100).toFixed(0)}%
+                        <div className="text-3xl font-semibold text-red-400 mb-1">
+                          {(repoResults[0].hallucinationRate * 100).toFixed(0)}%
                         </div>
-                        <div className="text-xs text-zinc-500">F1 Score</div>
+                        <div className="text-xs text-zinc-500">Hallucination</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-3xl font-semibold text-blue-400 mb-1">
+                          {(repoResults[0].helpfulnessRate * 100).toFixed(0)}%
+                        </div>
+                        <div className="text-xs text-zinc-500">Helpful</div>
                       </div>
                     </div>
                   </div>
@@ -1235,12 +1348,24 @@ export default function App() {
                                   <h4 className="font-semibold text-zinc-200">{r.model}</h4>
                                   <p className="text-xs text-zinc-500 mt-1">{r.explanation}</p>
                                 </div>
-                                <div className="flex items-center gap-4 shrink-0">
+                                <div className="flex items-center gap-3 shrink-0">
                                   <div className="text-center">
-                                    <div className="text-sm font-semibold text-zinc-300">
-                                      {(r.scores.f1 * 100).toFixed(0)}%
+                                    <div className="text-sm font-semibold text-green-400">
+                                      {(r.criticalDetectionRate * 100).toFixed(0)}%
                                     </div>
-                                    <div className="text-xs text-zinc-600">F1</div>
+                                    <div className="text-xs text-zinc-600">Det</div>
+                                  </div>
+                                  <div className="text-center">
+                                    <div className="text-sm font-semibold text-red-400">
+                                      {(r.hallucinationRate * 100).toFixed(0)}%
+                                    </div>
+                                    <div className="text-xs text-zinc-600">Hall</div>
+                                  </div>
+                                  <div className="text-center">
+                                    <div className="text-sm font-semibold text-blue-400">
+                                      {(r.helpfulnessRate * 100).toFixed(0)}%
+                                    </div>
+                                    <div className="text-xs text-zinc-600">Help</div>
                                   </div>
                                   <span
                                     className={`text-xs px-2 py-1 rounded font-medium ${

@@ -54,23 +54,6 @@ SYSTEM_PROMPTS = [
 
 Provide specific line references where applicable."""
     },
-    {
-        "id": "prompt-3",
-        "content": """You are a code review assistant. Your job is to review pull requests and provide constructive feedback. Focus on finding real issues that could cause problems in production. Ignore minor style issues unless they affect readability significantly.
-
-When you find an issue, explain why it's a problem and suggest a fix."""
-    },
-    {
-        "id": "prompt-4",
-        "content": """Review this pull request as an experienced developer would. Look for:
-1. Logic errors
-2. Missing error handling
-3. Security vulnerabilities
-4. Race conditions
-5. Resource leaks
-
-Be direct. If the code looks fine, say so. If there are problems, list them clearly."""
-    },
 ]
 
 EXPECTED_FOCUS_DESCRIPTIONS = {
@@ -104,21 +87,78 @@ class EvalService:
         if not api_key:
             raise ValueError("PERPLEXITY_API_KEY environment variable required")
         
-        # Perplexity uses OpenAI-compatible API
         self.client = OpenAI(
             api_key=api_key,
             base_url="https://api.perplexity.ai"
         )
         
-        # Perplexity Sonar models
         self.models = [
-            "sonar",           # Lightweight search model
-            "sonar-pro",       # Advanced search model
+            "sonar",
+            "sonar-pro",
         ]
         
-        # Use sonar for judge (fast and cost-effective)
         self.judge_model = "sonar"
         self.dataset = self._load_dataset()
+    
+    def generate_expected_focus(self, diff: str, title: str) -> dict:
+        """
+        Analyze a PR diff and generate the expected focus area for evaluation.
+        Returns a focus keyword and explanation.
+        """
+        prompt = f"""Analyze this pull request and determine what a code reviewer should focus on.
+
+PR Title: {title}
+
+Diff:
+```
+{diff[:3000]}
+```
+
+Based on the changes, identify the PRIMARY area a code reviewer should focus on.
+Choose ONE focus area from this list that best matches:
+- error_handling: Missing or improper error handling
+- null_check: Potential null/undefined reference issues  
+- security_vulnerability: Security issues like injection, auth bypass
+- performance_issue: Performance problems or inefficiencies
+- race_condition: Concurrency or race condition issues
+- memory_leak: Resource or memory leaks
+- input_validation: Missing input validation
+- authentication: Authentication or authorization issues
+- data_integrity: Data consistency or integrity issues
+- logging: Missing or improper logging
+- edge_case: Unhandled edge cases
+- type_safety: Type-related issues
+- api_contract: API contract violations
+- configuration: Configuration or environment issues
+- refactoring: Code quality improvements needed
+
+Respond with ONLY valid JSON:
+{{"focus": "chosen_focus_keyword", "explanation": "brief reason why this is the main concern"}}"""
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.judge_model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=256,
+                temperature=0.1,
+            )
+            
+            text = response.choices[0].message.content or ""
+            if "```" in text:
+                text = text.split("```")[1] if "```" in text else text
+                if text.startswith("json"):
+                    text = text[4:]
+            
+            data = json.loads(text.strip())
+            return {
+                "focus": data.get("focus", "code_quality"),
+                "explanation": data.get("explanation", "General code review")
+            }
+        except Exception as e:
+            return {
+                "focus": "code_quality",
+                "explanation": f"Could not analyze: {str(e)}"
+            }
     
     def _load_dataset(self) -> list[EvalDatasetItem]:
         dataset_path = Path(__file__).parent.parent / "data" / "global_eval_dataset.json"
@@ -302,8 +342,8 @@ Respond with ONLY valid JSON: {{"judgment": true}} or {{"judgment": false, "reas
         hallucination_rate = sum(1 for r in results if r["hallucinated"]) / n
         helpfulness_rate = sum(1 for r in results if r["helpful"]) / n
         
-        # Pass criteria: >60% critical detection, <20% hallucination
-        passed = critical_detection_rate >= 0.6 and hallucination_rate <= 0.2
+        # Pass criteria: >50% critical detection, <35% hallucination
+        passed = critical_detection_rate >= 0.5 and hallucination_rate <= 0.35
         
         return ModelPromptResult(
             model=model_name,

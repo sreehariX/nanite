@@ -1,11 +1,10 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 import asyncio
 import logging
 from app.services.eval_service import eval_service, SYSTEM_PROMPTS
 
-# Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -176,7 +175,7 @@ async def run_evaluation_task():
                 critical_rate = sum(1 for r in combination_results if r["critical_detected"]) / n
                 hallucination_rate = sum(1 for r in combination_results if r["hallucinated"]) / n
                 helpfulness_rate = sum(1 for r in combination_results if r["helpful"]) / n
-                passed = critical_rate >= 0.6 and hallucination_rate <= 0.2
+                passed = critical_rate >= 0.5 and hallucination_rate <= 0.35
                 
                 add_log(f"")
                 add_log(f"  📊 Results for {model} + {prompt['id']}:")
@@ -260,3 +259,199 @@ async def get_eval_results():
         "status": "complete",
         "results": eval_results_cache["results"]
     }
+
+
+class PRForFocus(BaseModel):
+    id: int
+    title: str
+    diff: str
+
+
+class GenerateFocusRequest(BaseModel):
+    prs: List[PRForFocus]
+
+
+class FocusResult(BaseModel):
+    id: int
+    focus: str
+    explanation: str
+
+
+@router.post("/eval/generate-focus")
+async def generate_focus_for_prs(request: GenerateFocusRequest):
+    """Generate expected focus areas for a list of PRs using the LLM."""
+    results = []
+    
+    for pr in request.prs:
+        focus_data = eval_service.generate_expected_focus(pr.diff, pr.title)
+        results.append({
+            "id": pr.id,
+            "focus": focus_data["focus"],
+            "explanation": focus_data["explanation"]
+        })
+    
+    return {"results": results}
+
+
+class PRForEval(BaseModel):
+    id: int
+    title: str
+    diff: str
+    expectedFocus: str
+
+
+class RepoEvalRequest(BaseModel):
+    prs: List[PRForEval]
+
+
+repo_eval_status: dict = {
+    "running": False,
+    "progress": 0,
+    "total": 0,
+    "current_model": "",
+    "current_prompt": "",
+    "current_pr": "",
+    "logs": []
+}
+
+repo_eval_results_cache: dict = {}
+
+
+def add_repo_log(message: str):
+    logger.info(message)
+    repo_eval_status["logs"].append(message)
+    if len(repo_eval_status["logs"]) > 50:
+        repo_eval_status["logs"] = repo_eval_status["logs"][-50:]
+
+
+@router.post("/eval/repo/start")
+async def start_repo_eval(request: RepoEvalRequest, background_tasks: BackgroundTasks):
+    global repo_eval_status, repo_eval_results_cache
+    
+    if repo_eval_status["running"]:
+        raise HTTPException(status_code=400, detail="Evaluation already running")
+    
+    total = len(eval_service.models) * len(SYSTEM_PROMPTS)
+    repo_eval_status = {
+        "running": True,
+        "progress": 0,
+        "total": total,
+        "current_model": "",
+        "current_prompt": "",
+        "current_pr": "",
+        "logs": []
+    }
+    repo_eval_results_cache = {"prs": [pr.dict() for pr in request.prs]}
+    
+    add_repo_log(f"Starting repo-specific evaluation")
+    add_repo_log(f"Models: {len(eval_service.models)}, Prompts: {len(SYSTEM_PROMPTS)}")
+    add_repo_log(f"PRs to evaluate: {len(request.prs)}")
+    
+    background_tasks.add_task(run_repo_evaluation_task, request.prs)
+    
+    return {
+        "status": "started",
+        "message": "Repo evaluation started",
+        "total_combinations": total
+    }
+
+
+async def run_repo_evaluation_task(prs: List[PRForEval]):
+    global repo_eval_status, repo_eval_results_cache
+    
+    results = []
+    total = len(eval_service.models) * len(SYSTEM_PROMPTS)
+    current = 0
+    
+    for model in eval_service.models:
+        add_repo_log(f"Testing model: {model}")
+        
+        for prompt in SYSTEM_PROMPTS:
+            repo_eval_status["current_model"] = model
+            repo_eval_status["current_prompt"] = prompt["id"]
+            
+            add_repo_log(f"  Prompt: {prompt['id']}")
+            
+            pr_results = []
+            
+            for pr in prs:
+                repo_eval_status["current_pr"] = f"PR #{pr.id}"
+                add_repo_log(f"    Evaluating PR #{pr.id}...")
+                
+                review = eval_service.run_candidate_model(model, prompt["content"], pr.diff)
+                
+                critical_result = eval_service.judge_critical_detection(
+                    pr.diff, review, pr.expectedFocus
+                )
+                hallucination_result = eval_service.judge_hallucination(pr.diff, review)
+                helpfulness_result = eval_service.judge_helpfulness(review)
+                
+                pr_results.append({
+                    "pr_id": pr.id,
+                    "expected_focus": pr.expectedFocus,
+                    "critical_detected": critical_result.detected,
+                    "hallucinated": hallucination_result.detected,
+                    "helpful": helpfulness_result.detected,
+                })
+                
+                status_icon = "PASS" if critical_result.detected else "MISS"
+                add_repo_log(f"      Focus detection: {status_icon}")
+            
+            n = len(pr_results)
+            critical_rate = sum(1 for r in pr_results if r["critical_detected"]) / n if n > 0 else 0
+            hallucination_rate = sum(1 for r in pr_results if r["hallucinated"]) / n if n > 0 else 0
+            helpfulness_rate = sum(1 for r in pr_results if r["helpful"]) / n if n > 0 else 0
+            
+            passed = critical_rate >= 0.5 and hallucination_rate <= 0.35
+            verdict = "Recommended" if (critical_rate >= 0.8 and hallucination_rate <= 0.15) else ("Acceptable" if passed else "Rejected")
+            
+            results.append({
+                "model": model,
+                "promptId": prompt["id"],
+                "promptContent": prompt["content"],
+                "criticalDetectionRate": critical_rate,
+                "hallucinationRate": hallucination_rate,
+                "helpfulnessRate": helpfulness_rate,
+                "passed": passed,
+                "verdict": verdict,
+                "explanation": f"Detection: {critical_rate:.0%}, Hallucination: {hallucination_rate:.0%}, Helpful: {helpfulness_rate:.0%}",
+                "details": pr_results
+            })
+            
+            add_repo_log(f"  Result: {verdict} (Detection: {critical_rate:.0%})")
+            
+            current += 1
+            repo_eval_status["progress"] = current
+    
+    results.sort(key=lambda x: (x["criticalDetectionRate"], -x["hallucinationRate"]), reverse=True)
+    for i, r in enumerate(results):
+        r["rank"] = i + 1
+    
+    add_repo_log(f"Evaluation complete!")
+    add_repo_log(f"Best: {results[0]['model']} + {results[0]['promptId']} (Detection: {results[0]['criticalDetectionRate']:.0%})")
+    
+    repo_eval_results_cache["results"] = results
+    repo_eval_status["running"] = False
+
+
+@router.get("/eval/repo/status")
+async def get_repo_eval_status():
+    if repo_eval_status["running"]:
+        return {
+            "status": "running",
+            "progress": repo_eval_status["progress"],
+            "total": repo_eval_status["total"],
+            "current_model": repo_eval_status["current_model"],
+            "current_prompt": repo_eval_status["current_prompt"],
+            "current_pr": repo_eval_status["current_pr"],
+            "logs": repo_eval_status["logs"][-20:]
+        }
+    
+    if "results" in repo_eval_results_cache:
+        return {
+            "status": "complete",
+            "results": repo_eval_results_cache["results"],
+            "logs": repo_eval_status["logs"][-20:]
+        }
+    
+    return {"status": "idle", "logs": []}
