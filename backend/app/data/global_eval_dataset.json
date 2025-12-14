@@ -1,0 +1,99 @@
+[
+  {
+    "id": "global_pr_001",
+    "diff": "diff --git a/src/payments/refunds.ts b/src/payments/refunds.ts\n@@ -41,6 +41,10 @@ export async function refundPayment(paymentId: string) {\n   const payment = await db.findPayment(paymentId)\n+  if (!payment) {\n+    return\n+  }\n   await gateway.refund(payment.chargeId)\n }",
+    "expected_focus": "silent_failure",
+    "description": "Function returns silently when payment not found instead of throwing error or logging"
+  },
+  {
+    "id": "global_pr_002",
+    "diff": "diff --git a/src/auth/login.ts b/src/auth/login.ts\n@@ -15,7 +15,6 @@ export async function authenticate(userId: string) {\n   const user = await db.getUser(userId)\n-  if (!user) throw new Error('User not found')\n   return jwt.sign({ id: user.id }, SECRET)\n }",
+    "expected_focus": "null_reference",
+    "description": "Removed null check before accessing user.id, will throw TypeError if user is null"
+  },
+  {
+    "id": "global_pr_003",
+    "diff": "diff --git a/src/api/users.ts b/src/api/users.ts\n@@ -22,7 +22,7 @@ router.get('/users/:id', async (req, res) => {\n-  const user = await db.query('SELECT * FROM users WHERE id = $1', [req.params.id])\n+  const user = await db.query(`SELECT * FROM users WHERE id = '${req.params.id}'`)\n   res.json(user)\n })",
+    "expected_focus": "sql_injection",
+    "description": "Changed from parameterized query to string interpolation, vulnerable to SQL injection"
+  },
+  {
+    "id": "global_pr_004",
+    "diff": "diff --git a/src/payments/charge.ts b/src/payments/charge.ts\n@@ -10,7 +10,6 @@ export async function chargeUser(userId: string, amount: number) {\n   const user = await db.findUser(userId)\n-  const idempotencyKey = generateKey(userId, amount)\n   const result = await stripe.charges.create({\n     customer: user.stripeId,\n     amount,\n-    idempotency_key: idempotencyKey\n   })\n }",
+    "expected_focus": "duplicate_charge",
+    "description": "Removed idempotency key from Stripe charge, risking duplicate charges on retry"
+  },
+  {
+    "id": "global_pr_005",
+    "diff": "diff --git a/src/webhooks/stripe.ts b/src/webhooks/stripe.ts\n@@ -5,8 +5,7 @@ export async function handleWebhook(req: Request) {\n   const payload = await req.text()\n   const sig = req.headers.get('stripe-signature')\n-  const event = stripe.webhooks.constructEvent(payload, sig, webhookSecret)\n+  const event = JSON.parse(payload)\n   await processEvent(event)\n }",
+    "expected_focus": "signature_bypass",
+    "description": "Removed webhook signature verification, accepting any payload as valid"
+  },
+  {
+    "id": "global_pr_006",
+    "diff": "diff --git a/src/auth/password.ts b/src/auth/password.ts\n@@ -3,7 +3,7 @@ import crypto from 'crypto'\n \n export function hashPassword(password: string) {\n-  return bcrypt.hash(password, 12)\n+  return crypto.createHash('md5').update(password).digest('hex')\n }",
+    "expected_focus": "weak_crypto",
+    "description": "Changed from bcrypt to MD5 for password hashing, cryptographically weak"
+  },
+  {
+    "id": "global_pr_007",
+    "diff": "diff --git a/src/api/admin.ts b/src/api/admin.ts\n@@ -8,9 +8,6 @@ router.delete('/admin/users/:id', async (req, res) => {\n-  if (!req.user?.isAdmin) {\n-    return res.status(403).json({ error: 'Forbidden' })\n-  }\n   await db.deleteUser(req.params.id)\n   res.json({ success: true })\n })",
+    "expected_focus": "auth_bypass",
+    "description": "Removed admin authorization check, allowing any user to delete users"
+  },
+  {
+    "id": "global_pr_008",
+    "diff": "diff --git a/src/api/redirect.ts b/src/api/redirect.ts\n@@ -3,8 +3,5 @@ router.get('/redirect', (req, res) => {\n   const url = req.query.url\n-  if (!isAllowedDomain(url)) {\n-    return res.status(400).json({ error: 'Invalid redirect' })\n-  }\n   res.redirect(url)\n })",
+    "expected_focus": "open_redirect",
+    "description": "Removed URL validation, allowing redirect to any external domain"
+  },
+  {
+    "id": "global_pr_009",
+    "diff": "diff --git a/src/services/payment.ts b/src/services/payment.ts\n@@ -15,10 +15,7 @@ export async function processPayment(paymentId: string) {\n   let attempts = 0\n   while (attempts < 5) {\n     try {\n       await chargeCard(paymentId)\n       return\n     } catch (e) {\n       attempts++\n-      await sleep(Math.pow(2, attempts) * 1000)\n     }\n   }\n }",
+    "expected_focus": "missing_backoff",
+    "description": "Removed exponential backoff from retry loop, will hammer the API on failures"
+  },
+  {
+    "id": "global_pr_010",
+    "diff": "diff --git a/src/middleware/rateLimit.ts b/src/middleware/rateLimit.ts\n@@ -5,10 +5,6 @@ export function rateLimitMiddleware(req, res, next) {\n-  const ip = req.ip\n-  if (isRateLimited(ip)) {\n-    return res.status(429).json({ error: 'Too many requests' })\n-  }\n   next()\n }",
+    "expected_focus": "rate_limit_removed",
+    "description": "Removed rate limiting entirely, exposing API to abuse"
+  },
+  {
+    "id": "global_pr_011",
+    "diff": "diff --git a/src/api/files.ts b/src/api/files.ts\n@@ -8,7 +8,7 @@ router.get('/files/:filename', (req, res) => {\n-  const safePath = path.join(UPLOAD_DIR, path.basename(req.params.filename))\n+  const safePath = path.join(UPLOAD_DIR, req.params.filename)\n   res.sendFile(safePath)\n })",
+    "expected_focus": "path_traversal",
+    "description": "Removed path.basename, allowing ../../../etc/passwd style attacks"
+  },
+  {
+    "id": "global_pr_012",
+    "diff": "diff --git a/src/config/db.ts b/src/config/db.ts\n@@ -1,5 +1,5 @@\n-const dbPassword = process.env.DB_PASSWORD\n+const dbPassword = 'production_password_123'\n \n export const dbConfig = {\n   host: 'db.example.com',\n   password: dbPassword\n }",
+    "expected_focus": "hardcoded_secret",
+    "description": "Hardcoded database password instead of using environment variable"
+  },
+  {
+    "id": "global_pr_013",
+    "diff": "diff --git a/src/middleware/errorHandler.ts b/src/middleware/errorHandler.ts\n@@ -3,8 +3,5 @@ export function errorHandler(err, req, res, next) {\n-  console.error(err)\n-  res.status(500).json({ error: 'Internal server error' })\n+  res.status(500).json({ error: err.message, stack: err.stack, query: req.query })\n }",
+    "expected_focus": "error_disclosure",
+    "description": "Exposing full error stack and request details to client"
+  },
+  {
+    "id": "global_pr_014",
+    "diff": "diff --git a/src/settlements/process.ts b/src/settlements/process.ts\n@@ -10,9 +10,7 @@ export async function settlePayments(merchantId: string) {\n   const payments = await db.findPending(merchantId)\n-  for (const p of payments) {\n-    await settleOne(p)\n-  }\n+  await Promise.all(payments.map(p => settleOne(p)))\n   await updateBalance(merchantId)\n }",
+    "expected_focus": "race_condition",
+    "description": "Changed sequential to parallel processing, may cause race conditions in balance updates"
+  },
+  {
+    "id": "global_pr_015",
+    "diff": "diff --git a/src/api/external.ts b/src/api/external.ts\n@@ -5,7 +5,6 @@ export async function callExternalAPI(endpoint: string) {\n   const response = await fetch(endpoint, {\n     method: 'POST',\n-    signal: AbortSignal.timeout(30000),\n   })\n   return response.json()\n }",
+    "expected_focus": "missing_timeout",
+    "description": "Removed timeout from external API call, may hang indefinitely"
+  },
+  {
+    "id": "global_pr_016",
+    "diff": "diff --git a/src/audit/logger.ts b/src/audit/logger.ts\n@@ -8,8 +8,6 @@ export async function updatePayment(paymentId: string, data: any) {\n   const payment = await db.findPayment(paymentId)\n   await db.updatePayment(paymentId, data)\n-  await auditLog.record('payment.updated', { paymentId, changes: data, user: ctx.user })\n   return payment\n }",
+    "expected_focus": "missing_audit",
+    "description": "Removed audit logging for payment updates, compliance risk"
+  }
+]
+
