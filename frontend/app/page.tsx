@@ -157,6 +157,9 @@ export default function App() {
     currentPrompt: "",
     currentPr: "",
     currentStep: "",
+    subProgress: 0,
+    subTotal: 0,
+    elapsedTime: 0,
     logs: [] as string[]
   });
   const [repoResults, setRepoResults] = useState<RepoResult[]>([]);
@@ -294,13 +297,16 @@ export default function App() {
               currentPrompt: statusData.current_prompt || "",
               currentPr: statusData.current_pr || "",
               currentStep: statusData.current_step || "Processing...",
+              subProgress: statusData.sub_progress || 0,
+              subTotal: statusData.sub_total || 0,
+              elapsedTime: statusData.elapsed_time || 0,
               logs: statusData.logs || []
             });
             setLoadingMessage(statusData.current_step || "Processing...");
           } else if (statusData.status === "complete") {
             clearInterval(pollInterval);
             setGlobalResults(statusData.results || []);
-            setEvalProgress(prev => ({ ...prev, logs: statusData.logs || prev.logs }));
+            setEvalProgress(prev => ({ ...prev, logs: statusData.logs || prev.logs, elapsedTime: statusData.elapsed_time || prev.elapsedTime }));
             setIsLoading(false);
             setLoadingMessage("");
             setStep(1);
@@ -434,14 +440,17 @@ export default function App() {
               currentModel: statusData.current_model || "",
               currentPrompt: statusData.current_prompt || "",
               currentPr: statusData.current_pr || "",
-              currentStep: `Evaluating ${statusData.current_model} + ${statusData.current_prompt}`,
+              currentStep: statusData.current_step || `Evaluating ${statusData.current_model} + ${statusData.current_prompt}`,
+              subProgress: statusData.sub_progress || 0,
+              subTotal: statusData.sub_total || 0,
+              elapsedTime: statusData.elapsed_time || 0,
               logs: statusData.logs || []
             });
-            setLoadingMessage(statusData.current_pr || "Processing...");
+            setLoadingMessage(statusData.current_step || "Processing...");
           } else if (statusData.status === "complete") {
             clearInterval(pollInterval);
             setRepoResults(statusData.results || []);
-            setEvalProgress(prev => ({ ...prev, logs: statusData.logs || prev.logs }));
+            setEvalProgress(prev => ({ ...prev, logs: statusData.logs || prev.logs, elapsedTime: statusData.elapsed_time || prev.elapsedTime }));
             setIsLoading(false);
             setLoadingMessage("");
             setStep(4);
@@ -548,15 +557,27 @@ export default function App() {
                 <Card className="bg-zinc-900/50 border-zinc-800 backdrop-blur-sm">
                   <CardContent className="p-6">
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-semibold text-white">Evaluation Progress</h3>
+                      <div className="flex items-center gap-3">
+                        <h3 className="text-lg font-semibold text-white">Evaluation Progress</h3>
+                        <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-zinc-800 border border-zinc-700">
+                          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                          <span className="text-xs text-zinc-400">
+                            {Math.floor(evalProgress.elapsedTime / 60)}:{(evalProgress.elapsedTime % 60).toString().padStart(2, '0')}
+                          </span>
+                        </div>
+                      </div>
                       <span className="text-sm text-zinc-400">
                         {evalProgress.current}/{evalProgress.total} combinations
                       </span>
                     </div>
                     
-                    {/* Progress Bar */}
-                    <div className="mb-6">
-                      <div className="h-2 bg-zinc-800 rounded-full overflow-hidden">
+                    {/* Main Progress Bar */}
+                    <div className="mb-4">
+                      <div className="flex justify-between text-xs text-zinc-500 mb-1">
+                        <span>Overall Progress</span>
+                        <span>{((evalProgress.current / evalProgress.total) * 100).toFixed(0)}%</span>
+                      </div>
+                      <div className="h-3 bg-zinc-800 rounded-full overflow-hidden">
                         <motion.div
                           className="h-full bg-gradient-to-r from-green-500 to-green-400"
                           initial={{ width: 0 }}
@@ -564,10 +585,25 @@ export default function App() {
                           transition={{ duration: 0.3 }}
                         />
                       </div>
-                      <p className="text-xs text-zinc-500 mt-2 text-right">
-                        {((evalProgress.current / evalProgress.total) * 100).toFixed(0)}% complete
-                      </p>
                     </div>
+
+                    {/* Sub Progress Bar */}
+                    {evalProgress.subTotal > 0 && (
+                      <div className="mb-6">
+                        <div className="flex justify-between text-xs text-zinc-500 mb-1">
+                          <span>Current Combination: PR {evalProgress.subProgress}/{evalProgress.subTotal}</span>
+                          <span>{((evalProgress.subProgress / evalProgress.subTotal) * 100).toFixed(0)}%</span>
+                        </div>
+                        <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                          <motion.div
+                            className="h-full bg-gradient-to-r from-blue-500 to-blue-400"
+                            initial={{ width: 0 }}
+                            animate={{ width: `${(evalProgress.subProgress / evalProgress.subTotal) * 100}%` }}
+                            transition={{ duration: 0.3 }}
+                          />
+                        </div>
+                      </div>
+                    )}
 
                     {/* Current Status */}
                     <div className="grid grid-cols-2 gap-4 mb-6">
@@ -1030,14 +1066,27 @@ export default function App() {
                 <Card className="bg-zinc-900/50 border-zinc-800 backdrop-blur-sm">
                   <CardContent className="p-6">
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-semibold text-white">Running Evaluation</h3>
+                      <div className="flex items-center gap-3">
+                        <h3 className="text-lg font-semibold text-white">Running Evaluation</h3>
+                        <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-zinc-800 border border-zinc-700">
+                          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                          <span className="text-xs text-zinc-400">
+                            {Math.floor(evalProgress.elapsedTime / 60)}:{(evalProgress.elapsedTime % 60).toString().padStart(2, '0')}
+                          </span>
+                        </div>
+                      </div>
                       <span className="text-sm text-zinc-400">
                         {evalProgress.current}/{evalProgress.total} combinations
                       </span>
                     </div>
                     
-                    <div className="mb-6">
-                      <div className="h-2 bg-zinc-800 rounded-full overflow-hidden">
+                    {/* Main Progress */}
+                    <div className="mb-4">
+                      <div className="flex justify-between text-xs text-zinc-500 mb-1">
+                        <span>Overall Progress</span>
+                        <span>{((evalProgress.current / evalProgress.total) * 100).toFixed(0)}%</span>
+                      </div>
+                      <div className="h-3 bg-zinc-800 rounded-full overflow-hidden">
                         <motion.div
                           className="h-full bg-gradient-to-r from-green-500 to-green-400"
                           initial={{ width: 0 }}
@@ -1045,12 +1094,27 @@ export default function App() {
                           transition={{ duration: 0.3 }}
                         />
                       </div>
-                      <p className="text-xs text-zinc-500 mt-2 text-right">
-                        {((evalProgress.current / evalProgress.total) * 100).toFixed(0)}% complete
-                      </p>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-4 mb-6">
+                    {/* Sub Progress */}
+                    {evalProgress.subTotal > 0 && (
+                      <div className="mb-6">
+                        <div className="flex justify-between text-xs text-zinc-500 mb-1">
+                          <span>Current Combination: PR {evalProgress.subProgress}/{evalProgress.subTotal}</span>
+                          <span>{((evalProgress.subProgress / evalProgress.subTotal) * 100).toFixed(0)}%</span>
+                        </div>
+                        <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                          <motion.div
+                            className="h-full bg-gradient-to-r from-blue-500 to-blue-400"
+                            initial={{ width: 0 }}
+                            animate={{ width: `${(evalProgress.subProgress / evalProgress.subTotal) * 100}%` }}
+                            transition={{ duration: 0.3 }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-4 mb-6">
                       <div className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700/50">
                         <p className="text-xs text-zinc-500 mb-1">Model</p>
                         <p className="text-sm font-mono text-green-400">
@@ -1069,6 +1133,12 @@ export default function App() {
                           {evalProgress.currentPr || "-"}
                         </p>
                       </div>
+                      <div className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700/50">
+                        <p className="text-xs text-zinc-500 mb-1">Current Step</p>
+                        <p className="text-sm text-zinc-300 truncate">
+                          {evalProgress.currentStep || "-"}
+                        </p>
+                      </div>
                     </div>
 
                     <div>
@@ -1076,12 +1146,24 @@ export default function App() {
                         <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
                         <p className="text-xs text-zinc-500">Live Logs</p>
                       </div>
-                      <div className="bg-zinc-950 rounded-lg border border-zinc-800 p-3 h-32 overflow-auto font-mono text-xs">
+                      <div className="bg-zinc-950 rounded-lg border border-zinc-800 p-3 h-40 overflow-auto font-mono text-xs">
                         {evalProgress.logs.length === 0 ? (
                           <p className="text-zinc-600">Waiting for logs...</p>
                         ) : (
                           evalProgress.logs.map((log, idx) => (
-                            <div key={idx} className="py-0.5 text-zinc-400">
+                            <div
+                              key={idx}
+                              className={`py-0.5 ${
+                                log.includes("✅") ? "text-green-400" :
+                                log.includes("❌") ? "text-red-400" :
+                                log.includes("⚠️") ? "text-amber-400" :
+                                log.includes("🚀") || log.includes("🏁") ? "text-blue-400" :
+                                log.includes("📊") || log.includes("📋") ? "text-purple-400" :
+                                log.includes("🤖") ? "text-cyan-400" :
+                                log.includes("===") ? "text-zinc-500" :
+                                "text-zinc-400"
+                              }`}
+                            >
                               {log}
                             </div>
                           ))
