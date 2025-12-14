@@ -1033,7 +1033,7 @@ export default function App() {
                       <span>{loadingMessage || "Loading..."}</span>
                     </div>
                   ) : (
-                    `Send ${selectedCount} PRs to Kestra`
+                    `Generate Expected Focus (${selectedCount} PRs)`
                   )}
                 </Button>
               </div>
