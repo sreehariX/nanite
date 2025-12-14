@@ -280,6 +280,9 @@ export default function App() {
         currentPrompt: "",
         currentPr: "",
         currentStep: "Initializing...",
+        subProgress: 0,
+        subTotal: 0,
+        elapsedTime: 0,
         logs: []
       });
 
@@ -357,11 +360,13 @@ export default function App() {
       }
 
       const data = await response.json();
-      const focusMap = new Map(data.results.map((r: any) => [r.id, r]));
+      const focusMap = new Map<number, { id: number; focus: string; explanation: string }>(
+        data.results.map((r: any) => [r.id, r])
+      );
 
       const updatedPRs = prs.map((pr) => {
         if (pr.selected && focusMap.has(pr.id)) {
-          const focusData = focusMap.get(pr.id);
+          const focusData = focusMap.get(pr.id)!;
           return { ...pr, expectedFocus: focusData.focus };
         }
         return pr;
@@ -424,6 +429,9 @@ export default function App() {
         currentPrompt: "",
         currentPr: "",
         currentStep: "Initializing...",
+        subProgress: 0,
+        subTotal: 0,
+        elapsedTime: 0,
         logs: []
       });
 
