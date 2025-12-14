@@ -1307,17 +1307,6 @@ export default function App() {
                       </div>
                     </div>
                   </div>
-                  <div className="flex gap-3 mt-6">
-                    <Button className="bg-white text-black hover:bg-zinc-200 font-medium">
-                      Deploy Configuration
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      className="text-zinc-400 hover:text-white hover:bg-zinc-800 border border-zinc-800"
-                    >
-                      Export Results
-                    </Button>
-                  </div>
                 </motion.div>
               )}
 
