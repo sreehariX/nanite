@@ -126,13 +126,13 @@ async def start_global_eval(background_tasks: BackgroundTasks):
     eval_results_cache = {}
     
     print("\n" + "=" * 60)
-    print("🚀 GLOBAL EVALUATION STARTED")
+    print("GLOBAL EVALUATION STARTED")
     print("=" * 60)
     
-    add_log(f"🚀 Starting global evaluation")
-    add_log(f"📊 Models: {len(eval_service.models)} | Prompts: {len(SYSTEM_PROMPTS)} | Total: {total} combinations")
-    add_log(f"📝 Dataset: {dataset_size} PRs per combination")
-    add_log(f"⏱️  Estimated steps: {total * dataset_size * 4} (review + 3 judges each)")
+    add_log(f"Starting global evaluation")
+    add_log(f"Models: {len(eval_service.models)} | Prompts: {len(SYSTEM_PROMPTS)} | Total: {total} combinations")
+    add_log(f"Dataset: {dataset_size} PRs per combination")
+    add_log(f"Estimated steps: {total * dataset_size * 4} (review + 3 judges each)")
     
     background_tasks.add_task(run_evaluation_task)
     
@@ -153,12 +153,12 @@ async def run_evaluation_task():
     
     for model_idx, model in enumerate(eval_service.models):
         print(f"\n{'='*60}")
-        print(f"🤖 MODEL {model_idx + 1}/{len(eval_service.models)}: {model}")
+        print(f"MODEL {model_idx + 1}/{len(eval_service.models)}: {model}")
         print(f"{'='*60}")
         
         add_log(f"")
         add_log(f"{'='*50}")
-        add_log(f"🤖 Model {model_idx + 1}/{len(eval_service.models)}: {model}")
+        add_log(f"Model {model_idx + 1}/{len(eval_service.models)}: {model}")
         add_log(f"{'='*50}")
         
         for prompt_idx, prompt in enumerate(SYSTEM_PROMPTS):
@@ -172,9 +172,9 @@ async def run_evaluation_task():
             # Allow status update to be sent
             await asyncio.sleep(0.01)
             
-            print(f"\n  📋 Testing: {model} + {prompt['id']}")
+            print(f"\n  Testing: {model} + {prompt['id']}")
             add_log(f"")
-            add_log(f"📋 Testing: {model} + {prompt['id']}")
+            add_log(f"Testing: {model} + {prompt['id']}")
             
             try:
                 combination_results = []
@@ -192,56 +192,56 @@ async def run_evaluation_task():
                     eval_status["current_step"] = f"{pr_step} - Generating review..."
                     await asyncio.sleep(0.01)  # Allow status update
                     
-                    print(f"      📝 Generating code review...", end=" ", flush=True)
+                    print(f"      Generating code review...", end=" ", flush=True)
                     start = time.time()
                     review = eval_service.run_candidate_model(model, prompt["content"], pr.diff)
                     duration = time.time() - start
                     
                     if review.startswith("Error"):
-                        print(f"❌ ({duration:.1f}s)")
-                        add_log(f"    ❌ Review error: {review[:80]}...", "error")
+                        print(f"ERROR ({duration:.1f}s)")
+                        add_log(f"    Review error: {review[:80]}...", "error")
                     else:
-                        print(f"✅ ({len(review)} chars, {duration:.1f}s)")
-                        add_log(f"    ✅ Review generated ({len(review)} chars, {duration:.1f}s)")
+                        print(f"OK ({len(review)} chars, {duration:.1f}s)")
+                        add_log(f"    Review generated ({len(review)} chars, {duration:.1f}s)")
                     
                     # Step 2: Judge critical detection
                     eval_status["current_step"] = f"{pr_step} - Oumi Judge: Critical detection..."
                     await asyncio.sleep(0.01)
                     
-                    print(f"      🔍 Oumi Judge: Critical detection...", end=" ", flush=True)
+                    print(f"      Oumi Judge: Critical detection...", end=" ", flush=True)
                     start = time.time()
                     critical_result = eval_service.judge_critical_detection(pr.diff, review, pr.expected_focus)
                     duration = time.time() - start
                     
-                    status = "✅" if critical_result.detected else "❌"
+                    status = "PASS" if critical_result.detected else "FAIL"
                     print(f"{status} ({duration:.1f}s)")
-                    add_log(f"    {status} Critical: {critical_result.detected} ({duration:.1f}s)")
+                    add_log(f"    Critical: {critical_result.detected} ({duration:.1f}s)")
                     
                     # Step 3: Judge hallucination
                     eval_status["current_step"] = f"{pr_step} - Oumi Judge: Hallucination check..."
                     await asyncio.sleep(0.01)
                     
-                    print(f"      🔍 Oumi Judge: Hallucination check...", end=" ", flush=True)
+                    print(f"      Oumi Judge: Hallucination check...", end=" ", flush=True)
                     start = time.time()
                     hallucination_result = eval_service.judge_hallucination(pr.diff, review)
                     duration = time.time() - start
                     
-                    status = "⚠️" if hallucination_result.detected else "✅"
+                    status = "WARN" if hallucination_result.detected else "OK"
                     print(f"{status} ({duration:.1f}s)")
-                    add_log(f"    {status} Hallucination: {hallucination_result.detected} ({duration:.1f}s)")
+                    add_log(f"    Hallucination: {hallucination_result.detected} ({duration:.1f}s)")
                     
                     # Step 4: Judge helpfulness
                     eval_status["current_step"] = f"{pr_step} - Oumi Judge: Helpfulness..."
                     await asyncio.sleep(0.01)
                     
-                    print(f"      🔍 Oumi Judge: Helpfulness...", end=" ", flush=True)
+                    print(f"      Oumi Judge: Helpfulness...", end=" ", flush=True)
                     start = time.time()
                     helpfulness_result = eval_service.judge_helpfulness(review)
                     duration = time.time() - start
                     
-                    status = "✅" if helpfulness_result.detected else "❌"
+                    status = "PASS" if helpfulness_result.detected else "FAIL"
                     print(f"{status} ({duration:.1f}s)")
-                    add_log(f"    {status} Helpful: {helpfulness_result.detected} ({duration:.1f}s)")
+                    add_log(f"    Helpful: {helpfulness_result.detected} ({duration:.1f}s)")
                     
                     combination_results.append({
                         "pr_id": pr.id,
@@ -261,18 +261,18 @@ async def run_evaluation_task():
                 helpfulness_rate = sum(1 for r in combination_results if r["helpful"]) / n
                 passed = critical_rate >= 0.5 and hallucination_rate <= 0.35
                 
-                print(f"\n    📊 Results for {model} + {prompt['id']}:")
+                print(f"\n    Results for {model} + {prompt['id']}:")
                 print(f"       Critical Detection: {critical_rate*100:.1f}%")
                 print(f"       Hallucination Rate: {hallucination_rate*100:.1f}%")
                 print(f"       Helpfulness Rate:   {helpfulness_rate*100:.1f}%")
-                print(f"       Status: {'✅ PASSED' if passed else '❌ FILTERED'}")
+                print(f"       Status: {'PASSED' if passed else 'FILTERED'}")
                 
                 add_log(f"")
-                add_log(f"  📊 Results for {model} + {prompt['id']}:")
+                add_log(f"  Results for {model} + {prompt['id']}:")
                 add_log(f"     Critical Detection: {critical_rate*100:.1f}%")
                 add_log(f"     Hallucination Rate: {hallucination_rate*100:.1f}%")
                 add_log(f"     Helpfulness Rate: {helpfulness_rate*100:.1f}%")
-                add_log(f"     Status: {'✅ PASSED' if passed else '❌ FILTERED'}")
+                add_log(f"     Status: {'PASSED' if passed else 'FILTERED'}")
                 
                 results.append({
                     "model": model,
@@ -286,8 +286,8 @@ async def run_evaluation_task():
                 })
                 
             except Exception as e:
-                print(f"\n    ❌ Error: {str(e)}")
-                add_log(f"  ❌ Error: {str(e)}", "error")
+                print(f"\n    Error: {str(e)}")
+                add_log(f"  Error: {str(e)}", "error")
                 results.append({
                     "model": model,
                     "prompt_id": prompt["id"],
@@ -308,20 +308,20 @@ async def run_evaluation_task():
     total_time = int(time.time() - eval_status["start_time"])
     
     print(f"\n{'='*60}")
-    print(f"🏁 EVALUATION COMPLETE")
+    print(f"EVALUATION COMPLETE")
     print(f"{'='*60}")
-    print(f"✅ Passed: {passed_count}/{len(results)}")
-    print(f"❌ Filtered: {len(results) - passed_count}/{len(results)}")
-    print(f"⏱️  Total time: {total_time}s")
+    print(f"Passed: {passed_count}/{len(results)}")
+    print(f"Filtered: {len(results) - passed_count}/{len(results)}")
+    print(f"Total time: {total_time}s")
     print(f"{'='*60}\n")
     
     add_log(f"")
     add_log(f"{'='*50}")
-    add_log(f"🏁 EVALUATION COMPLETE")
+    add_log(f"EVALUATION COMPLETE")
     add_log(f"{'='*50}")
-    add_log(f"✅ Passed: {passed_count}/{len(results)}")
-    add_log(f"❌ Filtered: {len(results) - passed_count}/{len(results)}")
-    add_log(f"⏱️  Total time: {total_time}s")
+    add_log(f"Passed: {passed_count}/{len(results)}")
+    add_log(f"Filtered: {len(results) - passed_count}/{len(results)}")
+    add_log(f"Total time: {total_time}s")
     
     eval_results_cache["results"] = results
     eval_status["running"] = False
@@ -473,12 +473,12 @@ async def start_repo_eval(request: RepoEvalRequest, background_tasks: Background
     repo_eval_results_cache = {"prs": [pr.dict() for pr in request.prs]}
     
     print("\n" + "=" * 60)
-    print("🚀 REPO-SPECIFIC EVALUATION STARTED")
+    print("REPO-SPECIFIC EVALUATION STARTED")
     print("=" * 60)
     
-    add_repo_log(f"🚀 Starting repo-specific evaluation")
-    add_repo_log(f"📊 Models: {len(eval_service.models)}, Prompts: {len(SYSTEM_PROMPTS)}")
-    add_repo_log(f"📝 PRs to evaluate: {len(request.prs)}")
+    add_repo_log(f"Starting repo-specific evaluation")
+    add_repo_log(f"Models: {len(eval_service.models)}, Prompts: {len(SYSTEM_PROMPTS)}")
+    add_repo_log(f"PRs to evaluate: {len(request.prs)}")
     
     background_tasks.add_task(run_repo_evaluation_task, request.prs)
     
@@ -498,10 +498,10 @@ async def run_repo_evaluation_task(prs: List[PRForEval]):
     
     for model_idx, model in enumerate(eval_service.models):
         print(f"\n{'='*60}")
-        print(f"🤖 MODEL {model_idx + 1}/{len(eval_service.models)}: {model}")
+        print(f"MODEL {model_idx + 1}/{len(eval_service.models)}: {model}")
         print(f"{'='*60}")
         
-        add_repo_log(f"🤖 Testing model: {model}")
+        add_repo_log(f"Testing model: {model}")
         
         for prompt_idx, prompt in enumerate(SYSTEM_PROMPTS):
             repo_eval_status["current_model"] = model
@@ -512,8 +512,8 @@ async def run_repo_evaluation_task(prs: List[PRForEval]):
             
             await asyncio.sleep(0.01)
             
-            print(f"\n  📋 Prompt: {prompt['id']}")
-            add_repo_log(f"  📋 Prompt: {prompt['id']}")
+            print(f"\n  Prompt: {prompt['id']}")
+            add_repo_log(f"  Prompt: {prompt['id']}")
             
             pr_results = []
             
@@ -529,39 +529,39 @@ async def run_repo_evaluation_task(prs: List[PRForEval]):
                 repo_eval_status["current_step"] = f"PR #{pr.id} - Generating review..."
                 await asyncio.sleep(0.01)
                 
-                print(f"      📝 Generating review...", end=" ", flush=True)
+                print(f"      Generating review...", end=" ", flush=True)
                 start = time.time()
                 review = eval_service.run_candidate_model(model, prompt["content"], pr.diff)
-                print(f"✅ ({time.time() - start:.1f}s)")
+                print(f"OK ({time.time() - start:.1f}s)")
                 
                 # Judge critical
                 repo_eval_status["current_step"] = f"PR #{pr.id} - Oumi Judge: Critical..."
                 await asyncio.sleep(0.01)
                 
-                print(f"      🔍 Critical detection...", end=" ", flush=True)
+                print(f"      Critical detection...", end=" ", flush=True)
                 start = time.time()
                 critical_result = eval_service.judge_critical_detection(pr.diff, review, pr.expectedFocus)
-                status = "✅" if critical_result.detected else "❌"
+                status = "PASS" if critical_result.detected else "FAIL"
                 print(f"{status} ({time.time() - start:.1f}s)")
                 
                 # Judge hallucination
                 repo_eval_status["current_step"] = f"PR #{pr.id} - Oumi Judge: Hallucination..."
                 await asyncio.sleep(0.01)
                 
-                print(f"      🔍 Hallucination check...", end=" ", flush=True)
+                print(f"      Hallucination check...", end=" ", flush=True)
                 start = time.time()
                 hallucination_result = eval_service.judge_hallucination(pr.diff, review)
-                status = "⚠️" if hallucination_result.detected else "✅"
+                status = "WARN" if hallucination_result.detected else "OK"
                 print(f"{status} ({time.time() - start:.1f}s)")
                 
                 # Judge helpfulness
                 repo_eval_status["current_step"] = f"PR #{pr.id} - Oumi Judge: Helpfulness..."
                 await asyncio.sleep(0.01)
                 
-                print(f"      🔍 Helpfulness...", end=" ", flush=True)
+                print(f"      Helpfulness...", end=" ", flush=True)
                 start = time.time()
                 helpfulness_result = eval_service.judge_helpfulness(review)
-                status = "✅" if helpfulness_result.detected else "❌"
+                status = "PASS" if helpfulness_result.detected else "FAIL"
                 print(f"{status} ({time.time() - start:.1f}s)")
                 
                 pr_results.append({
@@ -583,8 +583,8 @@ async def run_repo_evaluation_task(prs: List[PRForEval]):
             passed = critical_rate >= 0.5 and hallucination_rate <= 0.35
             verdict = "Recommended" if (critical_rate >= 0.8 and hallucination_rate <= 0.15) else ("Acceptable" if passed else "Rejected")
             
-            print(f"\n    📊 Result: {verdict} (Det: {critical_rate:.0%}, Hall: {hallucination_rate:.0%})")
-            add_repo_log(f"  📊 Result: {verdict} (Detection: {critical_rate:.0%})")
+            print(f"\n    Result: {verdict} (Det: {critical_rate:.0%}, Hall: {hallucination_rate:.0%})")
+            add_repo_log(f"  Result: {verdict} (Detection: {critical_rate:.0%})")
             
             results.append({
                 "model": model,
@@ -609,15 +609,15 @@ async def run_repo_evaluation_task(prs: List[PRForEval]):
     total_time = int(time.time() - repo_eval_status["start_time"])
     
     print(f"\n{'='*60}")
-    print(f"🏁 EVALUATION COMPLETE")
+    print(f"EVALUATION COMPLETE")
     print(f"{'='*60}")
-    print(f"🥇 Best: {results[0]['model']} + {results[0]['promptId']} (Det: {results[0]['criticalDetectionRate']:.0%})")
-    print(f"⏱️  Total time: {total_time}s")
+    print(f"Best: {results[0]['model']} + {results[0]['promptId']} (Det: {results[0]['criticalDetectionRate']:.0%})")
+    print(f"Total time: {total_time}s")
     print(f"{'='*60}\n")
     
-    add_repo_log(f"🏁 Evaluation complete!")
-    add_repo_log(f"🥇 Best: {results[0]['model']} + {results[0]['promptId']} (Detection: {results[0]['criticalDetectionRate']:.0%})")
-    add_repo_log(f"⏱️  Total time: {total_time}s")
+    add_repo_log(f"Evaluation complete!")
+    add_repo_log(f"Best: {results[0]['model']} + {results[0]['promptId']} (Detection: {results[0]['criticalDetectionRate']:.0%})")
+    add_repo_log(f"Total time: {total_time}s")
     
     repo_eval_results_cache["results"] = results
     repo_eval_status["running"] = False

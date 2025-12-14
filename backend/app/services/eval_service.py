@@ -55,6 +55,17 @@ SYSTEM_PROMPTS = [
 
 Provide specific line references where applicable."""
     },
+    {
+        "id": "prompt-3",
+        "content": """You are a security-focused code reviewer. Examine this pull request with special attention to:
+- Security vulnerabilities (injection attacks, authentication bypass, data exposure)
+- Error handling and edge cases that could lead to failures
+- Input validation and sanitization
+- Resource leaks, race conditions, and concurrency issues
+- Compliance with security best practices
+
+Prioritize critical security issues and provide specific remediation steps."""
+    },
 ]
 
 EXPECTED_FOCUS_DESCRIPTIONS = {

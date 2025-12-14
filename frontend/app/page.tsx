@@ -655,12 +655,12 @@ export default function App() {
                             <div
                               key={idx}
                               className={`py-0.5 ${
-                                log.includes("✅") ? "text-green-400" :
-                                log.includes("❌") ? "text-red-400" :
-                                log.includes("⚠️") ? "text-amber-400" :
-                                log.includes("🚀") || log.includes("🏁") ? "text-blue-400" :
-                                log.includes("📊") || log.includes("📋") ? "text-purple-400" :
-                                log.includes("🤖") ? "text-cyan-400" :
+                                log.includes("PASSED") || log.includes("PASS") || log.includes("OK") ? "text-green-400" :
+                                log.includes("FILTERED") || log.includes("FAIL") || log.includes("ERROR") || log.includes("Error") ? "text-red-400" :
+                                log.includes("WARN") ? "text-amber-400" :
+                                log.includes("EVALUATION COMPLETE") || log.includes("Starting") ? "text-blue-400" :
+                                log.includes("Results") || log.includes("Testing") ? "text-purple-400" :
+                                log.includes("Model") ? "text-cyan-400" :
                                 log.includes("===") ? "text-zinc-500" :
                                 "text-zinc-400"
                               }`}
@@ -1162,12 +1162,12 @@ export default function App() {
                             <div
                               key={idx}
                               className={`py-0.5 ${
-                                log.includes("✅") ? "text-green-400" :
-                                log.includes("❌") ? "text-red-400" :
-                                log.includes("⚠️") ? "text-amber-400" :
-                                log.includes("🚀") || log.includes("🏁") ? "text-blue-400" :
-                                log.includes("📊") || log.includes("📋") ? "text-purple-400" :
-                                log.includes("🤖") ? "text-cyan-400" :
+                                log.includes("PASSED") || log.includes("PASS") || log.includes("OK") ? "text-green-400" :
+                                log.includes("FILTERED") || log.includes("FAIL") || log.includes("ERROR") || log.includes("Error") ? "text-red-400" :
+                                log.includes("WARN") ? "text-amber-400" :
+                                log.includes("EVALUATION COMPLETE") || log.includes("Starting") ? "text-blue-400" :
+                                log.includes("Results") || log.includes("Testing") ? "text-purple-400" :
+                                log.includes("Model") ? "text-cyan-400" :
                                 log.includes("===") ? "text-zinc-500" :
                                 "text-zinc-400"
                               }`}
