@@ -1,12 +1,16 @@
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import github, eval
 
 app = FastAPI(title="Nanite Eval API")
 
+# CORS: Allow frontend origins (comma-separated in env var)
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -19,4 +23,3 @@ app.include_router(eval.router, prefix="/api")
 @app.get("/health")
 async def health_check():
     return {"status": "ok"}
-
