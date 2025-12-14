@@ -1,16 +1,20 @@
 """
-Evaluation service using Oumi-style LLM-as-judge methodology with Perplexity models.
+Evaluation service using Oumi LLM-as-judge framework with Perplexity models.
 """
 import os
 import json
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
 load_dotenv()
 
 from openai import OpenAI
+
+# Oumi imports for LLM-as-judge functionality
+from oumi.judges.simple_judge import SimpleJudge
+from oumi.core.configs.judge_config import JudgeConfig
 
 
 class EvalDatasetItem(BaseModel):
@@ -73,149 +77,133 @@ EXPECTED_FOCUS_DESCRIPTIONS = {
 }
 
 
-class PerplexityJudge:
+class OumiJudge:
     """
-    Oumi-style LLM Judge using Perplexity Sonar API directly.
+    LLM Judge using Oumi framework with Perplexity Sonar API.
     Implements BOOL judgment type with explanation support.
     """
     
     def __init__(self):
-        api_key = os.getenv("PERPLEXITY_API_KEY")
-        if not api_key:
-            raise ValueError("PERPLEXITY_API_KEY environment variable required")
+        judges_dir = Path(__file__).parent.parent / "judges"
         
-        self.client = OpenAI(
-            api_key=api_key,
-            base_url="https://api.perplexity.ai"
+        # Load Oumi judge configurations from YAML files
+        self.critical_judge = SimpleJudge(
+            judge_config=str(judges_dir / "critical_detection.yaml")
         )
-        self.model = "sonar"
-    
-    def _parse_judgment(self, response_text: str) -> tuple[bool, Optional[str]]:
-        """Parse Oumi-style judgment response (BOOL type with explanation)."""
-        text = response_text.strip()
-        
-        try:
-            if "```" in text:
-                for part in text.split("```"):
-                    clean = part.strip()
-                    if clean.startswith("json"):
-                        clean = clean[4:].strip()
-                    if clean.startswith("{"):
-                        text = clean
-                        break
-            
-            if text.startswith("{"):
-                data = json.loads(text)
-                judgment = data.get("judgment", data.get("judgement", False))
-                if isinstance(judgment, str):
-                    judgment = judgment.lower() in ["yes", "true", "1"]
-                explanation = data.get("explanation", None)
-                return bool(judgment), explanation
-        except:
-            pass
-        
-        text_lower = text.lower()
-        if text_lower.startswith("yes") or "yes" in text_lower[:30]:
-            return True, None
-        elif text_lower.startswith("no") or "no" in text_lower[:30]:
-            return False, text[:200] if len(text) > 10 else None
-        
-        return False, f"Could not parse response"
+        self.hallucination_judge = SimpleJudge(
+            judge_config=str(judges_dir / "hallucination.yaml")
+        )
+        self.helpfulness_judge = SimpleJudge(
+            judge_config=str(judges_dir / "helpfulness.yaml")
+        )
     
     def judge_critical_detection(self, diff: str, review: str, expected_focus: str) -> JudgeResult:
-        """Oumi-style BOOL judgment for critical issue detection."""
-        prompt = f"""You are a strict code review evaluator.
-
-PR Diff:
-```
-{diff[:2000]}
-```
-
-Code Review:
-```
-{review[:2000]}
-```
-
-Expected Issue: {expected_focus.upper()}
-
-Did the review correctly identify or mention this type of issue?
-The review doesn't need exact words, but must clearly describe this issue type.
-
-Respond with JSON only: {{"judgment": true, "explanation": "reason"}} or {{"judgment": false, "explanation": "what was missed"}}"""
-
+        """
+        Oumi BOOL judgment for critical issue detection.
+        Uses SimpleJudge with the critical_detection.yaml configuration.
+        """
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=256,
-                temperature=0.0,
-            )
-            detected, reason = self._parse_judgment(response.choices[0].message.content or "")
-            return JudgeResult(detected=detected, reason=reason if not detected else None)
+            # Prepare dataset for Oumi judge
+            dataset = [{
+                "diff": diff[:2000],
+                "review": review[:2000],
+                "expected_focus": expected_focus,
+            }]
+            
+            # Run Oumi judge
+            outputs = self.critical_judge.judge(dataset)
+            
+            if outputs and len(outputs) > 0:
+                output = outputs[0]
+                judgment = output.field_values.get("judgment", False)
+                explanation = output.field_values.get("explanation")
+                
+                # Convert judgment to boolean if it's a string
+                if isinstance(judgment, str):
+                    judgment = judgment.lower() in ["yes", "true", "1"]
+                
+                return JudgeResult(
+                    detected=bool(judgment),
+                    reason=explanation if not judgment else None
+                )
+            
+            return JudgeResult(detected=False, reason="No judgment output from Oumi")
+            
         except Exception as e:
-            return JudgeResult(detected=False, reason=f"Judge error: {str(e)}")
+            return JudgeResult(detected=False, reason=f"Oumi judge error: {str(e)}")
     
     def judge_hallucination(self, diff: str, review: str) -> JudgeResult:
-        """Oumi-style BOOL judgment for hallucination detection."""
-        prompt = f"""You are checking for hallucinations in a code review.
-
-PR Diff:
-```
-{diff[:2000]}
-```
-
-Code Review:
-```
-{review[:2000]}
-```
-
-Did the review mention issues that are NOT present in the diff?
-Examples: mentioning SQL injection when there's no database code, claiming functions exist that don't appear in the diff.
-
-Respond with JSON only: {{"judgment": true, "explanation": "what was hallucinated"}} or {{"judgment": false}}"""
-
+        """
+        Oumi BOOL judgment for hallucination detection.
+        Uses SimpleJudge with the hallucination.yaml configuration.
+        """
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=256,
-                temperature=0.0,
-            )
-            detected, reason = self._parse_judgment(response.choices[0].message.content or "")
-            return JudgeResult(detected=detected, reason=reason if detected else None)
+            # Prepare dataset for Oumi judge
+            dataset = [{
+                "diff": diff[:2000],
+                "review": review[:2000],
+            }]
+            
+            # Run Oumi judge
+            outputs = self.hallucination_judge.judge(dataset)
+            
+            if outputs and len(outputs) > 0:
+                output = outputs[0]
+                judgment = output.field_values.get("judgment", False)
+                explanation = output.field_values.get("explanation")
+                
+                # Convert judgment to boolean if it's a string
+                if isinstance(judgment, str):
+                    judgment = judgment.lower() in ["yes", "true", "1"]
+                
+                return JudgeResult(
+                    detected=bool(judgment),
+                    reason=explanation if judgment else None
+                )
+            
+            return JudgeResult(detected=False, reason="No judgment output from Oumi")
+            
         except Exception as e:
-            return JudgeResult(detected=False, reason=f"Judge error: {str(e)}")
+            return JudgeResult(detected=False, reason=f"Oumi judge error: {str(e)}")
     
     def judge_helpfulness(self, review: str) -> JudgeResult:
-        """Oumi-style BOOL judgment for helpfulness."""
-        prompt = f"""Evaluate if this code review is helpful.
-
-Code Review:
-```
-{review[:2000]}
-```
-
-Did the review provide at least one concrete, actionable suggestion?
-A helpful review points out specific issues and suggests fixes.
-
-Respond with JSON only: {{"judgment": true}} or {{"judgment": false, "explanation": "why not helpful"}}"""
-
+        """
+        Oumi BOOL judgment for helpfulness.
+        Uses SimpleJudge with the helpfulness.yaml configuration.
+        """
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=256,
-                temperature=0.0,
-            )
-            detected, reason = self._parse_judgment(response.choices[0].message.content or "")
-            return JudgeResult(detected=detected, reason=reason if not detected else None)
+            # Prepare dataset for Oumi judge
+            dataset = [{
+                "review": review[:2000],
+            }]
+            
+            # Run Oumi judge
+            outputs = self.helpfulness_judge.judge(dataset)
+            
+            if outputs and len(outputs) > 0:
+                output = outputs[0]
+                judgment = output.field_values.get("judgment", False)
+                explanation = output.field_values.get("explanation")
+                
+                # Convert judgment to boolean if it's a string
+                if isinstance(judgment, str):
+                    judgment = judgment.lower() in ["yes", "true", "1"]
+                
+                return JudgeResult(
+                    detected=bool(judgment),
+                    reason=explanation if not judgment else None
+                )
+            
+            return JudgeResult(detected=False, reason="No judgment output from Oumi")
+            
         except Exception as e:
-            return JudgeResult(detected=False, reason=f"Judge error: {str(e)}")
+            return JudgeResult(detected=False, reason=f"Oumi judge error: {str(e)}")
 
 
 class EvalService:
     """
-    Oumi-style evaluation service using Perplexity Sonar models.
+    Oumi-based evaluation service using Perplexity Sonar models.
+    Uses Oumi's SimpleJudge for LLM-as-judge evaluations.
     """
     
     def __init__(self):
@@ -223,6 +211,7 @@ class EvalService:
         if not api_key:
             raise ValueError("PERPLEXITY_API_KEY environment variable required")
         
+        # OpenAI client for generating candidate model reviews
         self.client = OpenAI(
             api_key=api_key,
             base_url="https://api.perplexity.ai"
@@ -233,7 +222,8 @@ class EvalService:
             "sonar-pro",
         ]
         
-        self.judge = PerplexityJudge()
+        # Use Oumi judge for evaluations
+        self.judge = OumiJudge()
         self.dataset = self._load_dataset()
     
     def _load_dataset(self) -> list[EvalDatasetItem]:
@@ -298,20 +288,20 @@ Respond with JSON: {{"focus": "chosen_focus", "explanation": "brief reason"}}"""
             return {"focus": "code_quality", "explanation": f"Could not analyze: {str(e)}"}
     
     def judge_critical_detection(self, diff: str, review: str, expected_focus: str) -> JudgeResult:
-        """Use Oumi-style judge for critical issue detection."""
+        """Use Oumi judge for critical issue detection."""
         focus_description = EXPECTED_FOCUS_DESCRIPTIONS.get(expected_focus, expected_focus)
         return self.judge.judge_critical_detection(diff, review, focus_description)
     
     def judge_hallucination(self, diff: str, review: str) -> JudgeResult:
-        """Use Oumi-style judge for hallucination detection."""
+        """Use Oumi judge for hallucination detection."""
         return self.judge.judge_hallucination(diff, review)
     
     def judge_helpfulness(self, review: str) -> JudgeResult:
-        """Use Oumi-style judge for helpfulness evaluation."""
+        """Use Oumi judge for helpfulness evaluation."""
         return self.judge.judge_helpfulness(review)
     
     def evaluate_single_pr(self, model_name: str, prompt: dict, pr: EvalDatasetItem) -> dict:
-        """Evaluate a single PR using Oumi-style LLM-as-judge."""
+        """Evaluate a single PR using Oumi LLM-as-judge."""
         review = self.run_candidate_model(model_name, prompt["content"], pr.diff)
         
         critical_result = self.judge_critical_detection(pr.diff, review, pr.expected_focus)
@@ -330,7 +320,7 @@ Respond with JSON: {{"focus": "chosen_focus", "explanation": "brief reason"}}"""
         }
     
     def evaluate_model_prompt_combination(self, model_name: str, prompt: dict) -> ModelPromptResult:
-        """Evaluate all PRs for a model/prompt combination."""
+        """Evaluate all PRs for a model/prompt combination using Oumi judges."""
         results = []
         for pr in self.dataset:
             result = self.evaluate_single_pr(model_name, prompt, pr)

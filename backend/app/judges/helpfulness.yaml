@@ -1,20 +1,30 @@
 judge_params:
-  prompt_template: |
-    You are evaluating if a code review is helpful to developers.
+  system_instruction: |
+    You are evaluating if a code review is helpful to developers. A helpful review provides concrete, actionable feedback that developers can use to improve their code.
+    
+    Criteria for a helpful review:
+    1. Points out specific issues with clear explanations
+    2. Suggests how to fix problems or improve the code
+    3. Provides context on why something is problematic
+    4. References specific lines or code sections
+    5. Offers constructive criticism rather than vague concerns
+    
+    A review is NOT helpful if it:
+    - Only provides generic praise or criticism
+    - Makes vague statements without specifics
+    - Lists concerns without explaining why they matter
+    - Fails to suggest any improvements
+    
+    Respond with JSON: {"judgment": true/false, "explanation": "why the review is or isn't helpful"}
 
+  prompt_template: |
     Code Review Output:
     ```
     {review}
     ```
 
-    Question: Did the review provide at least one concrete, actionable suggestion for improvement?
-    
-    A helpful review should:
-    - Point out specific issues with clear explanations
-    - Suggest how to fix problems
-    - Provide context on why something is problematic
+    Did the review provide at least one concrete, actionable suggestion for improvement?
 
-    Respond with 'Yes' if the review is helpful, 'No' if it lacks actionable feedback.
   response_format: JSON
   judgment_type: BOOL
   include_explanation: True
@@ -24,7 +34,7 @@ inference_config:
     model_name: "sonar"
   engine: REMOTE
   remote_params:
-    api_url: "https://api.perplexity.ai"
+    api_url: "https://api.perplexity.ai/chat/completions"
     api_key_env_varname: "PERPLEXITY_API_KEY"
   generation:
     max_new_tokens: 256
