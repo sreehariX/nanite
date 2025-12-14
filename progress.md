@@ -39,3 +39,7 @@ this is complex > will i able to implement it ? i dont know, project seems inter
 11-12-2025
 
 really underestimated the complexity of this wasted 4 days, this thing can't be built in week, switching to new idea to use oumi
+
+12,13,14
+
+- built and completed the hackathon project trying to answers a question " what is the best model + system prompt for pr review for your specific repository"
