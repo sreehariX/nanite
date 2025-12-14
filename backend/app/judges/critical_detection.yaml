@@ -1,0 +1,34 @@
+judge_params:
+  prompt_template: |
+    You are a strict code review evaluator. Your task is to determine if a code review correctly identified a specific type of issue.
+
+    PR Diff:
+    ```
+    {diff}
+    ```
+
+    Code Review Output:
+    ```
+    {review}
+    ```
+
+    Expected Issue Type: {expected_focus}
+
+    Question: Did the code review correctly identify or mention the risk of {expected_focus}?
+    The review doesn't need to use the exact words, but must clearly mention or describe this type of issue.
+
+    Respond with 'Yes' if the review identified this issue, 'No' if it did not.
+  response_format: JSON
+  judgment_type: BOOL
+  include_explanation: True
+
+inference_config:
+  model:
+    model_name: "sonar"
+  engine: REMOTE
+  remote_params:
+    api_url: "https://api.perplexity.ai"
+    api_key_env_varname: "PERPLEXITY_API_KEY"
+  generation:
+    max_new_tokens: 256
+    temperature: 0.0

@@ -1,0 +1,31 @@
+judge_params:
+  prompt_template: |
+    You are evaluating if a code review is helpful to developers.
+
+    Code Review Output:
+    ```
+    {review}
+    ```
+
+    Question: Did the review provide at least one concrete, actionable suggestion for improvement?
+    
+    A helpful review should:
+    - Point out specific issues with clear explanations
+    - Suggest how to fix problems
+    - Provide context on why something is problematic
+
+    Respond with 'Yes' if the review is helpful, 'No' if it lacks actionable feedback.
+  response_format: JSON
+  judgment_type: BOOL
+  include_explanation: True
+
+inference_config:
+  model:
+    model_name: "sonar"
+  engine: REMOTE
+  remote_params:
+    api_url: "https://api.perplexity.ai"
+    api_key_env_varname: "PERPLEXITY_API_KEY"
+  generation:
+    max_new_tokens: 256
+    temperature: 0.0

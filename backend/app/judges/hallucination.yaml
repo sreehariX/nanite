@@ -1,0 +1,36 @@
+judge_params:
+  prompt_template: |
+    You are a strict evaluator checking for hallucinations in code reviews.
+
+    PR Diff:
+    ```
+    {diff}
+    ```
+
+    Code Review Output:
+    ```
+    {review}
+    ```
+
+    Question: Did the review mention issues that are NOT present in the diff?
+    Examples of hallucination:
+    - Mentioning SQL injection when there's no database code
+    - Mentioning authentication issues when there's no auth code
+    - Claiming a function exists that doesn't appear in the diff
+    - Reporting bugs in code that wasn't changed
+
+    Respond with 'Yes' if there are hallucinations, 'No' if the review only mentions issues actually present in the diff.
+  response_format: JSON
+  judgment_type: BOOL
+  include_explanation: True
+
+inference_config:
+  model:
+    model_name: "sonar"
+  engine: REMOTE
+  remote_params:
+    api_url: "https://api.perplexity.ai"
+    api_key_env_varname: "PERPLEXITY_API_KEY"
+  generation:
+    max_new_tokens: 256
+    temperature: 0.0

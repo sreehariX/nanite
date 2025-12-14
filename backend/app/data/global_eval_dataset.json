@@ -10,18 +10,5 @@
     "diff": "diff --git a/src/auth/login.ts b/src/auth/login.ts\n@@ -15,7 +15,6 @@ export async function authenticate(userId: string) {\n   const user = await db.getUser(userId)\n-  if (!user) throw new Error('User not found')\n   return jwt.sign({ id: user.id }, SECRET)\n }",
     "expected_focus": "null_reference",
     "description": "Removed null check before accessing user.id, will throw TypeError if user is null"
-  },
-  {
-    "id": "global_pr_003",
-    "diff": "diff --git a/src/api/users.ts b/src/api/users.ts\n@@ -22,7 +22,7 @@ router.get('/users/:id', async (req, res) => {\n-  const user = await db.query('SELECT * FROM users WHERE id = $1', [req.params.id])\n+  const user = await db.query(`SELECT * FROM users WHERE id = '${req.params.id}'`)\n   res.json(user)\n })",
-    "expected_focus": "sql_injection",
-    "description": "Changed from parameterized query to string interpolation, vulnerable to SQL injection"
-  },
-  {
-    "id": "global_pr_004",
-    "diff": "diff --git a/src/payments/charge.ts b/src/payments/charge.ts\n@@ -10,7 +10,6 @@ export async function chargeUser(userId: string, amount: number) {\n   const user = await db.findUser(userId)\n-  const idempotencyKey = generateKey(userId, amount)\n   const result = await stripe.charges.create({\n     customer: user.stripeId,\n     amount,\n-    idempotency_key: idempotencyKey\n   })\n }",
-    "expected_focus": "duplicate_charge",
-    "description": "Removed idempotency key from Stripe charge, risking duplicate charges on retry"
   }
 ]
-
